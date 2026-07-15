@@ -1,0 +1,32 @@
+{
+  "name": "hyperscript-tools",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Tooling for original _hyperscript (hyperscript.org): a parser-backed MCP server, with more to come.",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test:run --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "keywords": [
+    "hyperscript",
+    "_hyperscript",
+    "mcp",
+    "ai",
+    "llm",
+    "tooling"
+  ],
+  "author": "hyperscript-tools contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codetalcott/hyperscript-tools.git"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
