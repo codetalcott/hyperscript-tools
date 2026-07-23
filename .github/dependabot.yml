@@ -1,0 +1,29 @@
+# Automated dependency update PRs.
+# Docs: https://docs.github.com/code-security/dependabot/dependabot-version-updates
+version: 2
+updates:
+  # npm (root lockfile covers all workspaces).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Fold routine minor/patch bumps into one PR; majors still come solo so
+      # they get individual review (e.g. an @modelcontextprotocol/sdk major that
+      # finally moves @hono/node-server to a patched 2.x).
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # GitHub Actions used by the workflows, so runtime deprecations (like the
+  # Node 20 one) surface as PRs instead of being chased by hand.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"
