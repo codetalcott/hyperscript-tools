@@ -1,14 +1,33 @@
 # @hyperscript-tools/mcp-server
 
-MCP (Model Context Protocol) server for **original [\_hyperscript](https://hyperscript.org)**.
+**Write [\_hyperscript](https://hyperscript.org) with an AI assistant that actually gets the language right.**
 
-Gives your AI assistant (Claude, Cursor, etc.) a correct, parser-backed understanding of \_hyperscript — validation, parsing, documentation, and editor assist. Validation and parsing run **the real \_hyperscript parser** (the `hyperscript.org` package), so verdicts match the language exactly rather than approximating it with regexes.
+This is an MCP (Model Context Protocol) server for **original \_hyperscript**. If you use Claude, Cursor, or any other MCP-capable assistant to write hyperscript, it plugs in so the assistant can **validate, parse, and look up** hyperscript against the language itself. Validation and parsing run **the real \_hyperscript parser** (the `hyperscript.org` package) — so error messages, line/column positions, and the command inventory match what the browser will actually run, instead of a regex approximation that quietly gets edge cases wrong.
+
+For LLM-assisted authoring specifically, that means fewer confidently-wrong snippets: the assistant can check its work with `validate_hyperscript` and get the parser's real verdict before handing you code.
 
 ## Quick Start
 
+Both editors use the same config shape — run the published package with `npx`, no install step.
+
 ### Claude Code / Claude Desktop
 
-Add to your MCP configuration (`.mcp.json` or Claude Desktop settings):
+Add to your MCP configuration (`.mcp.json`, or Claude Desktop settings):
+
+```json
+{
+  "mcpServers": {
+    "hyperscript": {
+      "command": "npx",
+      "args": ["@hyperscript-tools/mcp-server"]
+    }
+  }
+}
+```
+
+### Cursor
+
+Add to `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global):
 
 ```json
 {

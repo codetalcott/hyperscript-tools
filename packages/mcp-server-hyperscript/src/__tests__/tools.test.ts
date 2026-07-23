@@ -59,6 +59,22 @@ describe('validate_hyperscript (parser-backed)', () => {
     const data = parse(await handleValidationTool('validate_hyperscript', { code: 'js return ??? end' }));
     expect(data).toHaveProperty('valid');
   });
+
+  it('returns the parser verdict for an empty string, not a missing-param error', async () => {
+    // An empty program is *provided*; report what the parser says (it rejects it)
+    // rather than pretending the caller forgot the argument.
+    const result = await handleValidationTool('validate_hyperscript', { code: '' });
+    expect(result.isError).toBeFalsy();
+    const data = parse(result);
+    expect(data).toHaveProperty('valid');
+    expect(data.error).toBeUndefined();
+  });
+
+  it('still rejects a genuinely missing code argument', async () => {
+    const result = await handleValidationTool('validate_hyperscript', {});
+    expect(result.isError).toBe(true);
+    expect(parse(result).error).toContain('Missing required parameter');
+  });
 });
 
 describe('parse_hyperscript', () => {
@@ -78,6 +94,31 @@ describe('parse_hyperscript', () => {
     );
     expect(Array.isArray(data.tokens)).toBe(true);
     expect(data.tokens.length).toBeGreaterThan(0);
+  });
+
+  it('omits internal plumbing and circular-ref noise from the AST view', async () => {
+    const data = parse(
+      await handleValidationTool('parse_hyperscript', {
+        code: 'on click if I match .active hide me else show me end',
+      })
+    );
+    // The command sequence is real commands only, not the empty-list terminators.
+    expect(data.commandSequence).toContain('ifCommand');
+    expect(data.commandSequence).not.toContain('emptyCommandListCommand');
+    // The compact view drops the internal binding maps and their back-references.
+    const astText = JSON.stringify(data.ast);
+    expect(astText).not.toContain('[circular]');
+    expect(astText).not.toContain('isFeature');
+    expect(astText).not.toContain('implicitReturn');
+  });
+
+  it('keeps real parameter lists (def args stay an array)', async () => {
+    const data = parse(
+      await handleValidationTool('parse_hyperscript', { code: 'def greet(name, age) log name end' })
+    );
+    const feature = (data.ast.features as Array<{ args?: unknown }>)[0];
+    expect(Array.isArray(feature.args)).toBe(true);
+    expect(feature.args).toHaveLength(2);
   });
 });
 
