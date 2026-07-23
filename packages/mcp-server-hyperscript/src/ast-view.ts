@@ -25,7 +25,17 @@ const SKIP_KEYS = new Set([
   'runtime',
   'parser',
   'kernel',
+  'isFeature', // always-true marker on feature nodes; redundant with `type`
 ]);
+
+/**
+ * Internal plumbing node types with no author-facing meaning: the empty
+ * terminator of a command list and the implicit return synthesized at the end
+ * of every handler/function. Dropping them removes the trailing
+ * `next: { emptyCommandListCommand … }` chains from the view and keeps them out
+ * of the reported command sequence.
+ */
+const INTERNAL_NODE_TYPES = new Set(['emptyCommandListCommand', 'implicitReturn']);
 
 const MAX_DEPTH = 24;
 const MAX_NODES = 2000;
@@ -91,18 +101,28 @@ export function astView(node: HyperscriptNode | undefined): {
     // Inline token -> just its surface value.
     if (isTokenLike(obj)) return { token: obj.value };
 
+    const type = typeof obj.type === 'string' ? obj.type : undefined;
+    // Drop internal plumbing nodes entirely; the parent simply loses the ref.
+    if (type && INTERNAL_NODE_TYPES.has(type)) return undefined;
+
     seen.add(obj);
     budget--;
 
-    const type = typeof obj.type === 'string' ? obj.type : undefined;
     if (type && type.endsWith('Command')) commandTypes.push(type);
 
     const out: Record<string, unknown> = {};
     if (type) out.type = type;
     for (const key of Object.keys(obj)) {
       if (key === 'type' || SKIP_KEYS.has(key) || key.endsWith('Token')) continue;
+      // `args` on a command/expression node is an internal binding map that
+      // duplicates the node's named fields with back-references; keep it only
+      // when it is the real parameter list (an array), as on def/on features.
+      if (key === 'args' && !Array.isArray(obj[key])) continue;
       const pruned = prune(obj[key], depth + 1);
-      if (pruned !== undefined) out[key] = pruned;
+      // Drop keys that resolve to nothing, or to a bare back-reference to a node
+      // already shown elsewhere in the tree (e.g. `targetExpr`, `rootExpr`).
+      if (pruned === undefined || pruned === '[circular]') continue;
+      out[key] = pruned;
     }
     return out;
   };

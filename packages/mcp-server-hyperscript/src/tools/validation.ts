@@ -86,13 +86,13 @@ export async function handleValidationTool(
     switch (name) {
       case 'validate_hyperscript': {
         const code = args.code;
-        if (typeof code !== 'string' || !code) return missing('code');
+        if (typeof code !== 'string') return missing('code');
         return await validateHyperscript(code);
       }
 
       case 'parse_hyperscript': {
         const code = args.code;
-        if (typeof code !== 'string' || !code) return missing('code');
+        if (typeof code !== 'string') return missing('code');
         return await parseHyperscript(code, args.includeTokens === true);
       }
 
