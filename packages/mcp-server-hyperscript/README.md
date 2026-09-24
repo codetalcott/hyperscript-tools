@@ -50,6 +50,8 @@ Add to `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global):
 | `parse_hyperscript`    | Parse to a compact AST view + command sequence (and optional token stream) |
 | `suggest_command`      | Heuristic: suggest the best command(s) for a described task              |
 
+By default both parsing tools read code the way the runtime reads an element script: the value of an `_="…"` attribute or the body of an inline `<script type="text/hyperscript">`, which must consist of features (`on`, `init`, `def`, `behavior`, `set`, `js`, …). Pass `mode: "snippet"` to check a standalone command or expression instead, as accepted by `_hyperscript("…")`.
+
 ### Editor assist
 
 | Tool                   | Description                                                       |
@@ -80,7 +82,7 @@ Documentation is also exposed as MCP resources:
 
 ## How it stays correct
 
-The documented command/feature inventory is **pinned to the parser's own registry** by a drift test (`src/__tests__/inventory.test.ts`). If a `hyperscript.org` version bump adds, removes, or renames a command, that test fails — so the docs cannot silently fall out of sync with the grammar. `get_language_info` reports the exact `hyperscript.org` version in use.
+The documented command/feature inventory is **pinned to the parser's own registry** by a drift test (`src/__tests__/inventory.test.ts`), checked in both directions. If a `hyperscript.org` version bump adds, removes, or renames a command, that test fails — so the docs cannot silently fall out of sync with the grammar. Every example the server ships (command and expression docs, suggestions, completions, and the resources) is parsed by the real parser in `src/__tests__/examples.test.ts`. `get_language_info` reports the exact `hyperscript.org` version in use.
 
 ## Dependencies
 

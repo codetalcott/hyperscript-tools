@@ -6,14 +6,19 @@
 
 import { describe, it, expect } from 'vitest';
 import { handleValidationTool } from '../tools/validation.js';
+import type { ParseMode } from '../hyperscript-loader.js';
 
-async function validate(code: string) {
-  const result = await handleValidationTool('validate_hyperscript', { code });
+async function validate(code: string, mode?: ParseMode) {
+  const result = await handleValidationTool('validate_hyperscript', { code, mode });
   return JSON.parse(result.content[0].text) as {
     valid: boolean;
+    mode: ParseMode;
+    hint?: string;
     errors: Array<{ message: string; line: number | null; column: number | null }>;
   };
 }
+
+const MODES: ParseMode[] = ['program', 'snippet'];
 
 // Idiomatic snippets drawn from hyperscript.org usage patterns.
 const VALID = [
@@ -39,19 +44,55 @@ const INVALID = [
 ];
 
 describe('golden corpus — valid snippets parse clean', () => {
-  it.each(VALID)('valid: %s', async code => {
-    const { valid, errors } = await validate(code);
+  it.each(MODES.flatMap(mode => VALID.map(code => [mode, code] as const)))('%s: %s', async (mode, code) => {
+    const { valid, errors } = await validate(code, mode);
     expect(errors, JSON.stringify(errors)).toEqual([]);
     expect(valid).toBe(true);
   });
 });
 
 describe('golden corpus — invalid snippets report errors', () => {
-  it.each(INVALID)('invalid: %s', async code => {
-    const { valid, errors } = await validate(code);
+  it.each(MODES.flatMap(mode => INVALID.map(code => [mode, code] as const)))('%s: %s', async (mode, code) => {
+    const { valid, errors } = await validate(code, mode);
     expect(valid).toBe(false);
     expect(errors.length).toBeGreaterThan(0);
     expect(errors[0].message).toBeTruthy();
+  });
+});
+
+// The runtime parses `_="…"` attributes and inline <script type="text/hyperscript">
+// as a program of features (LanguageKernel.parseHyperScript), not through
+// `_hyperscript.parse`. These verdicts were checked against the real runtime.
+describe('element scripts are read the way the runtime reads them (default mode)', () => {
+  it('accepts a script that starts with the `set` feature', async () => {
+    // `_hyperscript.parse` reads `set` as a command and rejects the `on` after it.
+    const code = 'set $count to 0\non click increment $count';
+    expect((await validate(code)).valid).toBe(true);
+    expect((await validate(code, 'snippet')).valid).toBe(false);
+  });
+
+  it('accepts a script that starts with a `js` feature', async () => {
+    const code = 'js\n  function greet() { return "hi" }\nend\non click call greet()';
+    expect((await validate(code)).valid).toBe(true);
+    expect((await validate(code, 'snippet')).valid).toBe(false);
+  });
+
+  it.each(['toggle .active', '1 + 2'])('rejects a bare command or expression: %s', async code => {
+    const program = await validate(code);
+    expect(program.valid).toBe(false);
+    expect(program.mode).toBe('program');
+    expect(program.hint).toContain('snippet');
+    const snippet = await validate(code, 'snippet');
+    expect(snippet.valid).toBe(true);
+    expect(snippet.hint).toBeUndefined();
+  });
+
+  it.each(['', '-- nothing but a comment'])('accepts an empty script: %j', async code => {
+    expect((await validate(code)).valid).toBe(true);
+  });
+
+  it('gives no snippet hint when the code is broken either way', async () => {
+    expect((await validate('on click toggle')).hint).toBeUndefined();
   });
 });
 

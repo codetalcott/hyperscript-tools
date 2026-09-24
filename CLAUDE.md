@@ -44,13 +44,14 @@ Everything hangs off one seam and one invariant.
 
 ### The loader is the only door to `_hyperscript`
 
-[src/hyperscript-loader.ts](packages/mcp-server-hyperscript/src/hyperscript-loader.ts) is the *single* place that touches the canonical library. All language knowledge flows through it; there is deliberately no second, hand-rolled grammar to drift from upstream. It exposes `parse`/`safeParse`/`tokenize`/`registryProbe`/`hyperscriptVersion`.
+[src/hyperscript-loader.ts](packages/mcp-server-hyperscript/src/hyperscript-loader.ts) is the *single* place that touches the canonical library. All language knowledge flows through it; there is deliberately no second, hand-rolled grammar to drift from upstream. It exposes `parse`/`safeParse`/`tokenize`/`registryProbe`/`registeredKeywords`/`hyperscriptVersion`.
 
-Two non-obvious things it handles:
+Three non-obvious things it handles:
 - **Awkward import.** `hyperscript.org`'s `exports` map points the package root at the IIFE build, which exports nothing to an ESM importer in Node. The loader resolves the package, then imports the sibling `_hyperscript.esm.js` by absolute file URL.
-- **Headless safety.** It only ever calls `parse`/`tokenize` (which never *execute* hyperscript), and the library's DOM bootstrap is `typeof document` -guarded, so importing in bare Node touches no DOM.
+- **Headless safety.** It only ever parses and tokenizes (which never *execute* hyperscript), and the library's DOM bootstrap is `typeof document` -guarded, so importing in bare Node touches no DOM.
+- **Two parse modes.** The runtime parses element scripts (`_`/`script`/`data-script` attributes, inline `<script type="text/hyperscript">`) with `LanguageKernel.parseHyperScript`: a program of features. `_hyperscript.parse` is a different entry point that dispatches on the first token (command list → feature list → expression), so it accepts a bare `toggle .active` and misreads a script that starts with the `set` or `js` feature as a command list. `parseHyperScript` is not exported, so `program` mode repeats its steps through `internals.createParser(...).parseElement('hyperscript')`; `snippet` mode is `_hyperscript.parse`. `program` is the default everywhere.
 
-`safeParse` is the one to use: `_hyperscript.parse` usually *collects* errors onto the returned node, but can still throw (e.g. the `js` command compiles its body with `new Function` at parse time). `safeParse` normalizes both into a flat `{ node, errors }`.
+`safeParse(code, mode)` is the one to use: parsing usually *collects* errors onto the returned node, but can still throw (e.g. `js` blocks compile their body with `new Function` at parse time). `safeParse` normalizes both into a flat `{ node, errors }`.
 
 ### Two classes of tools — keep them labeled
 
@@ -71,9 +72,9 @@ Each tool module in [src/tools/](packages/mcp-server-hyperscript/src/tools/) exp
 
 ### The drift-test invariant (most important thing to know)
 
-[src/tools/language-data.ts](packages/mcp-server-hyperscript/src/tools/language-data.ts) holds the authoritative language inventory (`COMMAND_NAMES`, `FEATURE_NAMES`, `NON_COMMANDS`) and curated prose (`COMMAND_DOCS`, `EXPRESSION_DOCS`, `SPECIAL_SYMBOLS`).
+[src/tools/language-data.ts](packages/mcp-server-hyperscript/src/tools/language-data.ts) holds the authoritative language inventory (`COMMAND_NAMES`, `FEATURE_NAMES`, `NON_COMMANDS`, `INTERNAL_COMMANDS`) and curated prose (`COMMAND_DOCS`, `EXPRESSION_DOCS`, `SPECIAL_SYMBOLS`).
 
-[src/__tests__/inventory.test.ts](packages/mcp-server-hyperscript/src/__tests__/inventory.test.ts) pins that inventory to the parser's **own** command/feature registry via `registryProbe()`. It asserts: every listed command/feature is really registered, known non-commands stay unregistered, and every curated doc entry is a real command (no phantom docs). Curated `COMMAND_DOCS` is intentionally a *subset* of `COMMAND_NAMES`.
+[src/__tests__/inventory.test.ts](packages/mcp-server-hyperscript/src/__tests__/inventory.test.ts) pins that inventory to the parser's **own** command/feature registry, in both directions. It asserts: every listed command/feature is really registered (`registryProbe()`), every registered command/feature is listed (`registeredKeywords()`, which takes candidates from the string literals in the loaded build and lets the registry decide), known non-commands stay unregistered, and every curated doc entry is a real command (no phantom docs). Curated `COMMAND_DOCS` is intentionally a *subset* of `COMMAND_NAMES`.
 
 **When bumping the `hyperscript.org` dependency:** run the tests. If the drift test fails, the grammar changed — update `COMMAND_NAMES`/`FEATURE_NAMES` (and ideally `COMMAND_DOCS`) to match the parser. This is the mechanism that stops the docs from silently falling out of sync on a version bump.
 
@@ -84,6 +85,7 @@ Each tool module in [src/tools/](packages/mcp-server-hyperscript/src/tools/) exp
 
 ### Tests
 
-- `golden.test.ts` — end-to-end corpus: idiomatic snippets that must parse clean, broken snippets that must report errors with accurate line/column. Guards against regex-era false verdicts.
+- `golden.test.ts` — end-to-end corpus: idiomatic snippets that must parse clean, broken snippets that must report errors with accurate line/column (in both parse modes), plus the cases where the two modes disagree. Guards against regex-era false verdicts.
 - `inventory.test.ts` — the drift test above.
+- `examples.test.ts` — every example the server ships (`COMMAND_DOCS`, `EXPRESSION_DOCS`, `suggest_command`, completion modifiers, and the `_="…"` attributes and "Example" table columns in the resources) must parse clean and must not use a dotted event name (`on click.once` parses but listens for an event literally named `click.once`). **When adding docs or resource content,** keep examples runnable so this test can check them.
 - `tools.test.ts` — tool surface (exact names, 10 total) and handler behavior.

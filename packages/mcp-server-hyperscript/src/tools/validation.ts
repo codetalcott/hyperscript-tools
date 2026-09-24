@@ -3,27 +3,45 @@
  *
  * `validate_hyperscript` and `parse_hyperscript` run the REAL grammar (via
  * ../hyperscript-loader) — no regex heuristics — so their verdicts match what
- * _hyperscript itself accepts. `suggest_command` is an intentionally heuristic
+ * _hyperscript itself accepts. By default they read code the way the runtime
+ * reads an element script; `mode: "snippet"` reads a standalone command or
+ * expression instead. `suggest_command` is an intentionally heuristic
  * task -> command helper and is labeled as such.
  */
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
-import { safeParse, tokenize, hyperscriptVersion } from '../hyperscript-loader.js';
+import {
+  PARSE_MODES,
+  safeParse,
+  tokenize,
+  hyperscriptVersion,
+  type FlatError,
+  type ParseMode,
+} from '../hyperscript-loader.js';
 import { astView } from '../ast-view.js';
 
 // =============================================================================
 // Tool Definitions
 // =============================================================================
 
+const MODE_PROPERTY = {
+  type: 'string',
+  enum: [...PARSE_MODES],
+  default: 'program',
+  description:
+    '"program" (default): an element script, i.e. the value of an _="…" attribute or the body of an inline <script type="text/hyperscript">, parsed exactly as the runtime parses it, so it must consist of features (on, init, def, behavior, set, js, …). "snippet": a standalone command list or expression, as accepted by _hyperscript("…") and _hyperscript.parse().',
+};
+
 export const validationTools: Tool[] = [
   {
     name: 'validate_hyperscript',
     description:
-      'Validate _hyperscript with the real parser. Returns { valid, errors } where each error has the actual message, line, and column from _hyperscript.',
+      'Validate _hyperscript with the real parser. By default the code is checked as an element script, the way the runtime parses _="…" attributes and <script type="text/hyperscript"> blocks; use mode "snippet" for a standalone command or expression. Returns { valid, mode, errors } where each error has the actual message, line, and column from _hyperscript.',
     inputSchema: {
       type: 'object',
       properties: {
         code: { type: 'string', description: 'The hyperscript code to validate' },
+        mode: MODE_PROPERTY,
       },
       required: ['code'],
     },
@@ -31,11 +49,12 @@ export const validationTools: Tool[] = [
   {
     name: 'parse_hyperscript',
     description:
-      'Parse _hyperscript with the real parser and return a compact AST view plus the command sequence and token stream. Ground truth for understanding what a snippet does.',
+      'Parse _hyperscript with the real parser and return a compact AST view plus the command sequence and token stream. Ground truth for understanding what a snippet does. Uses the same modes as validate_hyperscript.',
     inputSchema: {
       type: 'object',
       properties: {
         code: { type: 'string', description: 'The hyperscript code to parse' },
+        mode: MODE_PROPERTY,
         includeTokens: {
           type: 'boolean',
           description: 'Include the token stream in the result (default: false)',
@@ -78,6 +97,22 @@ const missing = (param: string): ToolResult => ({
   isError: true,
 });
 
+const invalidMode = (): ToolResult => ({
+  content: [
+    {
+      type: 'text',
+      text: JSON.stringify({ error: `Invalid parameter: mode must be one of ${PARSE_MODES.join(', ')}` }, null, 2),
+    },
+  ],
+  isError: true,
+});
+
+/** The requested parse mode; `program` when omitted, undefined when unrecognized. */
+function readMode(value: unknown): ParseMode | undefined {
+  if (value === undefined || value === null) return 'program';
+  return PARSE_MODES.find(m => m === value);
+}
+
 export async function handleValidationTool(
   name: string,
   args: Record<string, unknown>
@@ -87,13 +122,17 @@ export async function handleValidationTool(
       case 'validate_hyperscript': {
         const code = args.code;
         if (typeof code !== 'string') return missing('code');
-        return await validateHyperscript(code);
+        const mode = readMode(args.mode);
+        if (!mode) return invalidMode();
+        return await validateHyperscript(code, mode);
       }
 
       case 'parse_hyperscript': {
         const code = args.code;
         if (typeof code !== 'string') return missing('code');
-        return await parseHyperscript(code, args.includeTokens === true);
+        const mode = readMode(args.mode);
+        if (!mode) return invalidMode();
+        return await parseHyperscript(code, mode, args.includeTokens === true);
       }
 
       case 'suggest_command': {
@@ -116,29 +155,52 @@ export async function handleValidationTool(
 }
 
 // =============================================================================
+// Program vs. snippet hint
+// =============================================================================
+
+const SNIPPET_HINT =
+  'Not valid as an element script, but it parses as a standalone command or expression (mode "snippet"). ' +
+  'Element scripts are made of features: put commands inside a handler such as `on click …` or `init …`.';
+
+/**
+ * A command or expression on its own is not an element script, which reads as
+ * a surprising rejection when the caller meant a fragment. Say so explicitly.
+ */
+async function snippetHint(code: string, mode: ParseMode, errors: FlatError[]): Promise<string | undefined> {
+  if (mode !== 'program' || errors.length === 0) return undefined;
+  const snippet = await safeParse(code, 'snippet');
+  return snippet.errors.length === 0 ? SNIPPET_HINT : undefined;
+}
+
+// =============================================================================
 // validate_hyperscript
 // =============================================================================
 
-async function validateHyperscript(code: string): Promise<ToolResult> {
-  const { errors } = await safeParse(code);
-  return json({
+async function validateHyperscript(code: string, mode: ParseMode): Promise<ToolResult> {
+  const { errors } = await safeParse(code, mode);
+  const result: Record<string, unknown> = {
     valid: errors.length === 0,
+    mode,
     version: await hyperscriptVersion(),
     errors,
     counts: { errors: errors.length },
-  });
+  };
+  const hint = await snippetHint(code, mode, errors);
+  if (hint) result.hint = hint;
+  return json(result);
 }
 
 // =============================================================================
 // parse_hyperscript
 // =============================================================================
 
-async function parseHyperscript(code: string, includeTokens: boolean): Promise<ToolResult> {
-  const { node, errors } = await safeParse(code);
+async function parseHyperscript(code: string, mode: ParseMode, includeTokens: boolean): Promise<ToolResult> {
+  const { node, errors } = await safeParse(code, mode);
   const { view, commandTypes, truncated } = astView(node ?? undefined);
 
   const result: Record<string, unknown> = {
     valid: errors.length === 0,
+    mode,
     version: await hyperscriptVersion(),
     rootType: node?.type ?? null,
     commandSequence: commandTypes,
@@ -146,6 +208,8 @@ async function parseHyperscript(code: string, includeTokens: boolean): Promise<T
     truncated,
     errors,
   };
+  const hint = await snippetHint(code, mode, errors);
+  if (hint) result.hint = hint;
   if (includeTokens) {
     result.tokens = (await tokenize(code)).map(t => ({
       type: t.type,
@@ -168,7 +232,7 @@ interface CommandSuggestion {
   description: string;
 }
 
-const COMMAND_SUGGESTIONS: Record<string, CommandSuggestion> = {
+export const COMMAND_SUGGESTIONS: Record<string, CommandSuggestion> = {
   toggle: { command: 'toggle', syntax: 'toggle <class|attr> [on <target>]', example: 'toggle .active on #menu', description: 'Toggle a class or attribute on/off' },
   show: { command: 'show', syntax: 'show <target> [with <transition>]', example: 'show #modal with *opacity', description: 'Show a hidden element' },
   hide: { command: 'hide', syntax: 'hide <target> [with <transition>]', example: 'hide #modal with *opacity', description: 'Hide an element' },

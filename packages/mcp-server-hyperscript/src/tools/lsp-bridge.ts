@@ -21,9 +21,24 @@ import { COMMAND_NAMES, EXPRESSION_HOVER } from './language-data.js';
 const EVENTS = [
   'click', 'dblclick', 'submit', 'input', 'change', 'focus', 'blur', 'keydown', 'keyup',
   'keypress', 'mouseenter', 'mouseleave', 'mouseover', 'mouseout', 'mousedown', 'mouseup',
-  'scroll', 'load', 'resize', 'intersection', 'mutation', 'every',
+  'scroll', 'load', 'resize', 'intersection', 'mutation',
 ];
-const EVENT_MODIFIERS = ['once', 'prevent', 'stop', 'capture', 'passive', 'debounce', 'throttle'];
+
+/**
+ * `on` handler modifiers as the parser reads them. There are no `.once`-style
+ * dot modifiers: `on click.once` parses, but listens for an event named
+ * "click.once". Each example is checked by `__tests__/examples.test.ts`.
+ */
+export const EVENT_MODIFIERS: Array<{ label: string; detail: string; example: string }> = [
+  { label: 'every', detail: "Run each event's handler at once instead of queueing", example: 'on every click increment :clicks' },
+  { label: 'first', detail: 'Handle only the first event', example: 'on first click add .seen to me' },
+  { label: 'from', detail: 'Listen on another element', example: 'on click from #save add .saving to me' },
+  { label: 'elsewhere', detail: 'Events outside this element', example: 'on click from elsewhere hide me' },
+  { label: 'in', detail: 'Delegation: only events inside a matching element, which becomes it', example: 'on click in <li/> toggle .selected on it' },
+  { label: 'debounced at', detail: 'Wait until the events pause', example: 'on input debounced at 300ms send search to #results' },
+  { label: 'throttled at', detail: 'At most one event per interval', example: 'on scroll throttled at 100ms log window.scrollY' },
+  { label: 'queue', detail: 'Events arriving while the handler runs: all, first, last (default), none', example: 'on click queue none wait 1s' },
+];
 const FEATURES = ['on', 'behavior', 'def', 'init', 'worker', 'eventsource', 'socket', 'js', 'set'];
 const REFERENCES = ['me', 'you', 'it', 'result', 'its', 'my', 'your', 'event', 'target', 'detail', 'body', 'window', 'document'];
 const POSITIONAL = ['first', 'last', 'next', 'previous', 'closest', 'parent', 'children', 'random'];
@@ -152,7 +167,8 @@ function featureName(node: HyperscriptNode): string {
 }
 
 async function getDocumentSymbols(code: string): Promise<ToolResult> {
-  const { node: root } = await safeParse(code);
+  // Symbols are features, so read the code as the runtime reads an element script.
+  const { node: root } = await safeParse(code, 'program');
   const symbols: DocumentSymbol[] = [];
   const seen = new WeakSet<object>();
 
@@ -194,7 +210,9 @@ function getCompletions(code: string, line: number, character: number, context?:
   switch (inferredContext) {
     case 'event':
       for (const event of EVENTS) completions.push({ label: event, kind: 'Event', detail: `DOM event: ${event}` });
-      for (const mod of EVENT_MODIFIERS) completions.push({ label: `.${mod}`, kind: 'Modifier', detail: `Event modifier: .${mod}` });
+      for (const mod of EVENT_MODIFIERS) {
+        completions.push({ label: mod.label, kind: 'Modifier', detail: mod.detail, documentation: mod.example });
+      }
       break;
     case 'command':
       for (const cmd of COMMAND_NAMES) completions.push({ label: cmd, kind: 'Keyword', detail: `Command: ${cmd}` });
