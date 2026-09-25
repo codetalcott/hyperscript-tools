@@ -3,9 +3,10 @@
  *
  * `COMMAND_NAMES` / `FEATURE_NAMES` are the canonical surface of the language as
  * registered by `hyperscript.org` (verified against the parser's own command /
- * feature registry — see the drift test in `__tests__/inventory.test.ts`, which
- * fails CI if this list and the installed parser disagree). Everything else here
- * is curated prose keyed off that inventory.
+ * feature registry, in both directions — see the drift test in
+ * `__tests__/inventory.test.ts`, which fails CI if these lists and the installed
+ * parser disagree). Everything else here is curated prose keyed off that
+ * inventory; its examples are parsed by `__tests__/examples.test.ts`.
  *
  * When bumping the `hyperscript.org` dependency, run the drift test; if it flags
  * added/removed commands, update `COMMAND_NAMES` (and, ideally, `COMMAND_DOCS`).
@@ -36,6 +37,12 @@ export const FEATURE_NAMES: string[] = [
  * The drift test asserts none of these become registered commands unnoticed.
  */
 export const NON_COMMANDS: string[] = ['unless', 'while', 'async', 'else', 'then', 'end', 'eventsource', 'socket'];
+
+/**
+ * Registered in the parser's command table for internal use, never written by
+ * authors: `TEMPLATE_LINE` is the token type of a line inside a `render` template.
+ */
+export const INTERNAL_COMMANDS: string[] = ['TEMPLATE_LINE'];
 
 // =============================================================================
 // Command documentation (curated; a subset of COMMAND_NAMES with full detail)
@@ -73,12 +80,12 @@ export const COMMAND_DOCS: Record<string, CommandDoc> = {
   js: { name: 'js', category: 'Utility', description: 'Run an inline block of JavaScript (also usable as a top-level feature)', syntax: 'js [(<params>)] <body> end', examples: ['js return Math.random() end', 'js (x) return x * 2 end'] },
   'beep!': { name: 'beep!', category: 'Debug', description: 'Debugging aid: logs the value/expression it is attached to and returns it', syntax: 'beep! <expression>', examples: ['beep! me', 'set x to beep! (1 + 2)'] },
   breakpoint: { name: 'breakpoint', category: 'Debug', description: 'Pause execution in the hyperscript debugger (hdb)', syntax: 'breakpoint', examples: ['on click breakpoint then toggle .active'] },
-  go: { name: 'go', category: 'Navigation', description: 'Navigate to a URL or scroll to an element', syntax: 'go to (url <url> | <target> [<position>])', examples: ['go to url "/dashboard"', 'go to top of #section smoothly'] },
-  focus: { name: 'focus', category: 'Navigation', description: 'Move focus to an element', syntax: 'focus [on] <target>', examples: ['focus() the #input', 'focus on first <input/>'] },
-  blur: { name: 'blur', category: 'Navigation', description: 'Remove focus from an element', syntax: 'blur [from] <target>', examples: ['blur() the #input'] },
-  scroll: { name: 'scroll', category: 'Navigation', description: 'Scroll an element into view or to a position', syntax: 'scroll <target> [into view]', examples: ['scroll #section into view'] },
+  go: { name: 'go', category: 'Navigation', description: 'Navigate to a URL, go back in history, or scroll an element into view', syntax: 'go [to] url <url> [in new window] | go [to] [top|middle|bottom of] <element> [smoothly] | go back', examples: ['go to url "/dashboard"', 'go to top of #section smoothly', 'go back'] },
+  focus: { name: 'focus', category: 'Navigation', description: 'Move focus to an element (defaults to me)', syntax: 'focus [<target>]', examples: ['focus #input', 'focus the first <input/> in me'] },
+  blur: { name: 'blur', category: 'Navigation', description: 'Remove focus from an element (defaults to me)', syntax: 'blur [<target>]', examples: ['blur #input', 'blur me'] },
+  scroll: { name: 'scroll', category: 'Navigation', description: 'Scroll an element into view, or scroll by an amount', syntax: 'scroll to [the] [top|middle|bottom of] <target> [smoothly|instantly] | scroll [<target>] [up|down|left|right] by <amount>[px]', examples: ['scroll to #section', 'scroll to the top of #section smoothly', 'scroll down by 200px'] },
   transition: { name: 'transition', category: 'Animation', description: 'Animate CSS properties on an element over a duration', syntax: 'transition [<target>] <property> to <value> [over <duration>]', examples: ['transition *opacity to 0 over 500ms', 'transition my *height to "0px"'] },
-  settle: { name: 'settle', category: 'Animation', description: 'Wait for any in-flight CSS transitions on the element to complete', syntax: 'settle', examples: ['add .fade-out then settle then remove me'] },
+  settle: { name: 'settle', category: 'Animation', description: 'Wait for any in-flight CSS transitions on the element to complete', syntax: 'settle [<target>]', examples: ['add .fade-out then settle then remove me'] },
   measure: { name: 'measure', category: 'Animation', description: 'Measure an element’s box metrics into the result (top, width, etc.)', syntax: 'measure [<target>]', examples: ['measure #box then log its width'] },
   if: { name: 'if', category: 'Control Flow', description: 'Conditional execution', syntax: 'if <condition> <commands> [else <commands>] end', examples: ['if me matches .active hide me else show me end', 'if #input.value is empty add .error end'] },
   repeat: { name: 'repeat', category: 'Control Flow', description: 'Loop: fixed count, while/until a condition, forever, or for each item', syntax: 'repeat (<n> times | while <c> | until <c> | for <x> in <coll> | forever) <commands> end', examples: ['repeat 5 times increment :count end', 'repeat for item in .rows add .seen to item end'] },
@@ -86,13 +93,13 @@ export const COMMAND_DOCS: Record<string, CommandDoc> = {
   tell: { name: 'tell', category: 'Control Flow', description: 'Run a block of commands with a different implicit target (you/it)', syntax: 'tell <target> <commands> end', examples: ['tell #sidebar toggle .collapsed end'] },
   return: { name: 'return', category: 'Control Flow', description: 'Return a value from a function/handler', syntax: 'return [<value>]', examples: ['return true', 'return :result'] },
   exit: { name: 'exit', category: 'Control Flow', description: 'Exit the current event handler or function early', syntax: 'exit', examples: ['if not valid exit end'] },
-  halt: { name: 'halt', category: 'Control Flow', description: 'Halt the current event (optionally the default and/or bubbling) and/or execution', syntax: 'halt [the event] [bubbling] [default]', examples: ['halt the event', 'on submit halt the default'] },
+  halt: { name: 'halt', category: 'Control Flow', description: 'Stop the current event: prevent its default and/or its propagation. Bare `halt` also exits the handler; `halt the event…` keeps executing', syntax: "halt [the event['s]] [bubbling|default]", examples: ['halt the event', "on submit halt the event's default", 'halt'] },
   throw: { name: 'throw', category: 'Control Flow', description: 'Throw an error', syntax: 'throw <value>', examples: ['throw "invalid state"'] },
   break: { name: 'break', category: 'Control Flow', description: 'Break out of the enclosing loop', syntax: 'break', examples: ['repeat forever if done break end end'] },
   continue: { name: 'continue', category: 'Control Flow', description: 'Continue to the next iteration of the enclosing loop', syntax: 'continue', examples: ['for x in xs if x is null continue end log x end'] },
-  render: { name: 'render', category: 'Templates', description: 'Render a <template> with a data context into the result', syntax: 'render <template> [with <data>]', examples: ['render #row-template with { name: "A" }'] },
-  pick: { name: 'pick', category: 'Utility', description: 'Pick items/matches/substrings from a value (regex, items, or attributes)', syntax: 'pick <what> from <value>', examples: ['pick match of /\\d+/ from "a12b"', 'pick items 1 to 3 from :list'] },
-  select: { name: 'select', category: 'DOM', description: 'Select text within an input/textarea, or a range', syntax: 'select [<range>] [in <target>]', examples: ['select the #input'] },
+  render: { name: 'render', category: 'Templates', description: 'Render a <template> element with named arguments; the HTML goes into the result (it), or into a target', syntax: 'render <template> [with <name>: <value>, ...] [here | into <target>]', examples: ['render #row-template with name: "A"', 'render #row-template with name: "A" into #list'] },
+  pick: { name: 'pick', category: 'Utility', description: 'Pick items, characters, or regex matches out of a value into the result (it)', syntax: 'pick (first <n> | last <n> | random [<n>] | items <range> | characters <range> | match of <regex> | matches of <regex>) (of|from) <value>', examples: ['pick items 1 to 3 from :list', 'pick match of "[0-9]+" from "a12b"', 'pick first 2 of :list'] },
+  select: { name: 'select', category: 'DOM', description: 'Select the text of an input or textarea (defaults to me)', syntax: 'select [<target>]', examples: ['select #search', 'select the #input'] },
 };
 
 // =============================================================================
@@ -108,8 +115,8 @@ export interface ExpressionDoc {
 }
 
 export const EXPRESSION_DOCS: Record<string, ExpressionDoc> = {
-  me: { name: 'me', category: 'references', evaluatesTo: 'Element', description: 'The current element (the one the script is attached to). Aliases: I, my, myself.', examples: ['toggle .active on me', 'put "Hello" into me'] },
-  you: { name: 'you', category: 'references', evaluatesTo: 'Element', description: 'The element that triggered the event (the event target). Alias: yourself.', examples: ['add .selected to you'] },
+  me: { name: 'me', category: 'references', evaluatesTo: 'Element', description: 'The current element (the one the script is attached to). Aliases: I, my.', examples: ['toggle .active on me', 'put "Hello" into me'] },
+  you: { name: 'you', category: 'references', evaluatesTo: 'Element', description: 'The current element inside a `tell` block (undefined elsewhere; the event target is `target`). Aliases: your, yourself.', examples: ['tell <li/> in me add .selected to you end'] },
   it: { name: 'it', category: 'references', evaluatesTo: 'Any', description: 'The result of the previous command / expression. Aliases: its, result.', examples: ['fetch /api then put it into #output'] },
   result: { name: 'result', category: 'references', evaluatesTo: 'Any', description: 'Alias for "it" — the result of the previous command', examples: ['fetch /api then put result into #output'] },
   its: { name: 'its', category: 'references', evaluatesTo: 'Any', description: "Possessive form of 'it' for property access", examples: ['fetch /api as json then put its name into #output'] },
@@ -140,7 +147,7 @@ export const SPECIAL_SYMBOLS = [
   { name: 'id-ref', symbol: '#', description: 'CSS ID reference (#button, #output)' },
   { name: 'attribute-ref', symbol: '@', description: 'HTML attribute reference (@disabled, @data-id)' },
   { name: 'style-ref', symbol: '*', description: 'CSS style property (*background-color, *opacity)' },
-  { name: 'local-var', symbol: ':', description: 'Local (element-scoped) variable (:count, :data)' },
+  { name: 'element-var', symbol: ':', description: 'Element-scoped variable (:count, :data); a bare name is a local variable' },
   { name: 'global-var', symbol: '$', description: 'Global variable ($theme, $user)' },
   { name: 'query-literal', symbol: '<tag/>', description: 'CSS query literal (<div/>, <.item/>, <#id/>)' },
   { name: 'possessive', symbol: "'s", description: "Possessive property access (element's property)" },

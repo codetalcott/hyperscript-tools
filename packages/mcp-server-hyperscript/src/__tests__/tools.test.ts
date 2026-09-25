@@ -75,6 +75,22 @@ describe('validate_hyperscript (parser-backed)', () => {
     expect(result.isError).toBe(true);
     expect(parse(result).error).toContain('Missing required parameter');
   });
+
+  it('defaults to program mode and echoes the mode used', async () => {
+    const data = parse(await handleValidationTool('validate_hyperscript', { code: 'on click log 1' }));
+    expect(data.mode).toBe('program');
+    const snippet = parse(
+      await handleValidationTool('validate_hyperscript', { code: 'log 1', mode: 'snippet' })
+    );
+    expect(snippet.mode).toBe('snippet');
+    expect(snippet.valid).toBe(true);
+  });
+
+  it('rejects an unknown mode', async () => {
+    const result = await handleValidationTool('validate_hyperscript', { code: 'log 1', mode: 'element' });
+    expect(result.isError).toBe(true);
+    expect(parse(result).error).toContain('mode');
+  });
 });
 
 describe('parse_hyperscript', () => {
@@ -120,6 +136,23 @@ describe('parse_hyperscript', () => {
     expect(Array.isArray(feature.args)).toBe(true);
     expect(feature.args).toHaveLength(2);
   });
+
+  it('parses a leading `set` as a feature in program mode', async () => {
+    const data = parse(
+      await handleValidationTool('parse_hyperscript', { code: 'set $count to 0\non click increment $count' })
+    );
+    expect(data.valid).toBe(true);
+    expect(data.rootType).toBe('hyperscript');
+    expect(data.ast.features.map((f: { type: string }) => f.type)).toEqual(['setFeature', 'onFeature']);
+  });
+
+  it('parses a bare command in snippet mode', async () => {
+    const data = parse(
+      await handleValidationTool('parse_hyperscript', { code: 'toggle .active', mode: 'snippet' })
+    );
+    expect(data.valid).toBe(true);
+    expect(data.rootType).toBe('toggleCommand');
+  });
 });
 
 describe('suggest_command (heuristic)', () => {
@@ -148,6 +181,12 @@ describe('LSP Bridge Tools', () => {
     expect(kinds).toContain('Class'); // behavior
     expect(kinds).toContain('Function'); // def
     expect(data.count).toBeGreaterThanOrEqual(2);
+  });
+
+  it('finds symbols in a script that starts with the `set` feature', async () => {
+    const code = 'set $count to 0\non click increment $count';
+    const data = parse(await handleLspBridgeTool('get_document_symbols', { code }));
+    expect(data.symbols.map((s: { name: string }) => s.name)).toContain('on click');
   });
 });
 

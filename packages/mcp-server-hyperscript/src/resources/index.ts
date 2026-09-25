@@ -21,7 +21,7 @@ export function listResources(): Resource[] {
     {
       uri: 'hyperscript://docs/commands',
       name: '_hyperscript Commands Reference',
-      description: 'Complete reference for all _hyperscript commands',
+      description: 'Quick reference for common _hyperscript commands',
       mimeType: 'text/markdown',
     },
     {
