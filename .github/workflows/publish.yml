@@ -1,13 +1,27 @@
-# Runs tests, then publishes @hyperscript-tools/mcp-server to npm when a GitHub
-# release is created. Auth is via npm trusted publishing (OIDC) — no token
-# secret — which also attaches build provenance automatically.
-# See: https://docs.npmjs.com/generating-provenance-statements
+# Publishes @hyperscript-tools/mcp-server to npm and creates the GitHub release
+# when a version tag (v1.2.3) is pushed. The tag must match the package version.
+# npm auth is trusted publishing (OIDC), with no token secret, which also
+# attaches build provenance. See: https://docs.npmjs.com/trusted-publishers
+#
+# To release: merge the version bump, then tag that commit and push the tag:
+#   git tag -a v1.2.3 --cleanup=whitespace -F notes.md && git push origin v1.2.3
+# An annotated tag's message opens the release notes (--cleanup=whitespace
+# keeps Markdown `#` headings, which git strips by default); GitHub appends the
+# list of merged pull requests. (The trusted publisher on npmjs.com names this
+# file, so keep the filename.)
 
 name: Publish
 
 on:
-  release:
-    types: [created]
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -17,6 +31,13 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      - name: Check the tag matches the package version
+        run: |
+          version=$(node -p "require('./packages/mcp-server-hyperscript/package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match the package version ($version)."
+            exit 1
+          fi
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
@@ -40,3 +61,31 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm publish -w @hyperscript-tools/mcp-server
+
+  github-release:
+    needs: publish-npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release
+    steps:
+      - uses: actions/checkout@v7
+      # checkout keeps the pushed tag only as a lightweight ref; fetch the tag
+      # object so its message can open the release notes.
+      - run: git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # A release made on github.com creates its tag, which also runs this
+          # workflow: publish, and leave that release as it is.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; leaving it as it is."
+            exit 0
+          fi
+          : > notes.md
+          if [ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" = tag ]; then
+            git tag -l --format='%(contents:subject)%0a%0a%(contents:body)' "$GITHUB_REF_NAME" > notes.md
+          fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md --generate-notes
