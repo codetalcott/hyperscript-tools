@@ -3,10 +3,11 @@
  * Hyperscript MCP Server
  *
  * Model Context Protocol server for original _hyperscript development.
- * Provides validation, completions, documentation, and code analysis.
+ * Provides validation, parsing, documentation, and editor assist.
  *
- * Zero external dependencies beyond @modelcontextprotocol/sdk.
- * All tools use pattern-based analysis — no parser required.
+ * Validation and parsing run the canonical `hyperscript.org` parser (see
+ * ./hyperscript-loader.ts); `suggest_command`, completions and hover are
+ * heuristic helpers and say so in their descriptions.
  */
 
 import { createRequire } from 'node:module';

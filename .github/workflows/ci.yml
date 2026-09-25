@@ -9,11 +9,15 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Every Node line the package supports (engines: >=22).
+        node-version: [22, 24]
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
       - run: npm run typecheck

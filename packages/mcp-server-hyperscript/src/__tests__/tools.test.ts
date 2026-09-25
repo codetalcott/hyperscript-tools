@@ -3,7 +3,8 @@ import { describe, it, expect } from 'vitest';
 import { validationTools, handleValidationTool } from '../tools/validation.js';
 import { lspBridgeTools, handleLspBridgeTool } from '../tools/lsp-bridge.js';
 import { languageDocsTools, handleLanguageDocsTool } from '../tools/language-docs.js';
-import { listResources, readResource } from '../resources/index.js';
+import { listResources, readResource, RESOURCE_NOT_FOUND } from '../resources/index.js';
+import { MAX_CODE_LENGTH } from '../tools/results.js';
 
 const parse = (r: { content: Array<{ text: string }> }) => JSON.parse(r.content[0].text);
 
@@ -91,6 +92,12 @@ describe('validate_hyperscript (parser-backed)', () => {
     expect(result.isError).toBe(true);
     expect(parse(result).error).toContain('mode');
   });
+
+  it('rejects code over the size limit instead of parsing it', async () => {
+    const result = await handleValidationTool('validate_hyperscript', { code: 'x'.repeat(MAX_CODE_LENGTH + 1) });
+    expect(result.isError).toBe(true);
+    expect(parse(result).error).toContain('too long');
+  });
 });
 
 describe('parse_hyperscript', () => {
@@ -146,6 +153,31 @@ describe('parse_hyperscript', () => {
     expect(data.ast.features.map((f: { type: string }) => f.type)).toEqual(['setFeature', 'onFeature']);
   });
 
+  it('shows the object a property or method belongs to', async () => {
+    const data = parse(
+      await handleValidationTool('parse_hyperscript', { code: 'log #code.textContent', mode: 'snippet' })
+    );
+    expect(data.ast.exprs[0]).toMatchObject({ type: 'propertyAccess', root: { type: 'idRef', css: '#code' } });
+  });
+
+  it('shows values held only in a binding map, without repeats', async () => {
+    const set = parse(await handleValidationTool('parse_hyperscript', { code: 'set :count to 5', mode: 'snippet' }));
+    expect(set.ast.args).toEqual({ value: { type: 'number', value: 5 } });
+    const unless = parse(await handleValidationTool('parse_hyperscript', { code: 'log x unless y', mode: 'snippet' }));
+    expect(unless.ast).toMatchObject({ root: { type: 'logCommand' }, args: { conditional: { name: 'y' } } });
+    expect(unless.ast.root.args).toBeUndefined(); // log's own binding map only repeats `exprs`
+    expect(JSON.stringify(unless.ast)).not.toContain('[circular]');
+  });
+
+  it('keeps the parse result when the tokens cannot be produced', async () => {
+    const result = await handleValidationTool('parse_hyperscript', { code: 'on click log §', includeTokens: true });
+    expect(result.isError).toBeFalsy();
+    const data = parse(result);
+    expect(data.valid).toBe(false);
+    expect(data.tokens).toBeNull();
+    expect(data.errors[0]).toMatchObject({ line: 1, column: 13 });
+  });
+
   it('parses a bare command in snippet mode', async () => {
     const data = parse(
       await handleValidationTool('parse_hyperscript', { code: 'toggle .active', mode: 'snippet' })
@@ -188,6 +220,70 @@ describe('LSP Bridge Tools', () => {
     const data = parse(await handleLspBridgeTool('get_document_symbols', { code }));
     expect(data.symbols.map((s: { name: string }) => s.name)).toContain('on click');
   });
+
+  it('reports every core feature as a symbol', async () => {
+    const code = [
+      'set $count to 0',
+      'when $count changes log it',
+      'bind $name to #input.value',
+      'live set $total to $count end',
+      'install Removable',
+      'js',
+      '  function greet() { return 1 }',
+      'end',
+    ].join('\n');
+    const data = parse(await handleLspBridgeTool('get_document_symbols', { code }));
+    expect(data.symbols).toEqual([
+      { name: 'set $count', kind: 'Variable', line: 1 },
+      { name: 'when $count changes', kind: 'Event', line: 2 },
+      { name: 'bind $name', kind: 'Variable', line: 3 },
+      { name: 'live', kind: 'Event', line: 4 },
+      { name: 'install Removable', kind: 'Module', line: 5 },
+      { name: 'js (greet)', kind: 'Module', line: 6 },
+    ]);
+  });
+
+  it.each([
+    ['on ', 'event', 'click'],
+    ['toggle .active on ', 'selector', '#'],
+    ['on click then ', 'command', 'add'],
+    ['on click if ', 'expression', 'me'],
+  ])('infers the completion context after %j', async (code, context, first) => {
+    const data = parse(
+      await handleLspBridgeTool('get_completions', { code, line: 0, character: code.length })
+    );
+    expect(data.context).toBe(context);
+    expect(data.completions[0].label).toBe(first);
+  });
+
+  it('narrows completions to the word being typed', async () => {
+    for (const [code, labels] of [['on cl', ['click']], ['on click then tog', ['toggle']]] as const) {
+      const data = parse(
+        await handleLspBridgeTool('get_completions', { code, line: 0, character: code.length })
+      );
+      expect(data.completions.map((c: { label: string }) => c.label)).toEqual(labels);
+    }
+  });
+
+  it('offers only the modifiers that can follow `on` right after it', async () => {
+    const data = parse(await handleLspBridgeTool('get_completions', { code: 'on ', line: 0, character: 3 }));
+    const labels = data.completions.map((c: { label: string }) => c.label);
+    expect(labels).toEqual(expect.arrayContaining(['every', 'first']));
+    expect(labels).not.toContain('debounced at');
+  });
+
+  it.each([
+    ['get_completions', {}, 'Missing required parameter: code'],
+    ['get_hover_info', { code: 1, line: 0, character: 0 }, 'code must be a string'],
+    ['get_completions', { code: 'x', line: -1, character: 0 }, 'line must be a non-negative integer'],
+    ['get_hover_info', { code: 'x', line: 0, character: 1.5 }, 'character must be a non-negative integer'],
+    ['get_completions', { code: 'x', line: 0, character: 0, context: 'bogus' }, 'context must be one of'],
+    ['get_document_symbols', {}, 'Missing required parameter: code'],
+  ])('%s rejects bad input %j', async (tool, args, message) => {
+    const result = await handleLspBridgeTool(tool, args);
+    expect(result.isError).toBe(true);
+    expect(parse(result).error).toContain(message);
+  });
 });
 
 describe('Language Docs Tools', () => {
@@ -226,6 +322,13 @@ describe('Language Docs Tools', () => {
     expect(data.results.length).toBeGreaterThan(0);
   });
 
+  it('treats the search limit as a whole, non-negative count', async () => {
+    const search = async (limit: number) =>
+      parse(await handleLanguageDocsTool('search_language_elements', { query: 'class', limit })).results.length;
+    expect(await search(-1)).toBe(0);
+    expect(await search(2.7)).toBe(2);
+  });
+
   it('reports language info with the canonical version', async () => {
     const data = parse(await handleLanguageDocsTool('get_language_info', {}));
     expect(data.hyperscriptVersion).toBeTruthy();
@@ -249,7 +352,13 @@ describe('Resources', () => {
     expect(result.contents[0].text).toContain('toggle');
   });
 
-  it('throws on unknown resource', () => {
-    expect(() => readResource('hyperscript://unknown')).toThrow();
+  it('throws the MCP resource-not-found error on unknown resource', () => {
+    let thrown: unknown;
+    try {
+      readResource('hyperscript://unknown');
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toMatchObject({ code: RESOURCE_NOT_FOUND });
   });
 });

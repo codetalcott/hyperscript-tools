@@ -19,6 +19,7 @@ import {
   type ParseMode,
 } from '../hyperscript-loader.js';
 import { astView } from '../ast-view.js';
+import { invalid, json, missing, readCode, type ToolResult } from './results.js';
 
 // =============================================================================
 // Tool Definitions
@@ -36,7 +37,7 @@ export const validationTools: Tool[] = [
   {
     name: 'validate_hyperscript',
     description:
-      'Validate _hyperscript with the real parser. By default the code is checked as an element script, the way the runtime parses _="…" attributes and <script type="text/hyperscript"> blocks; use mode "snippet" for a standalone command or expression. Returns { valid, mode, errors } where each error has the actual message, line, and column from _hyperscript.',
+      'Validate _hyperscript with the real parser. By default the code is checked as an element script, the way the runtime parses _="…" attributes and <script type="text/hyperscript"> blocks; use mode "snippet" for a standalone command or expression. Returns { valid, mode, errors } where each error has the actual message and position from _hyperscript: line is 1-based, column is 0-based.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -86,27 +87,6 @@ export const validationTools: Tool[] = [
 // Tool Handler
 // =============================================================================
 
-type ToolResult = { content: Array<{ type: string; text: string }>; isError?: boolean };
-
-const json = (data: unknown): ToolResult => ({
-  content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
-});
-
-const missing = (param: string): ToolResult => ({
-  content: [{ type: 'text', text: JSON.stringify({ error: `Missing required parameter: ${param}` }, null, 2) }],
-  isError: true,
-});
-
-const invalidMode = (): ToolResult => ({
-  content: [
-    {
-      type: 'text',
-      text: JSON.stringify({ error: `Invalid parameter: mode must be one of ${PARSE_MODES.join(', ')}` }, null, 2),
-    },
-  ],
-  isError: true,
-});
-
 /** The requested parse mode; `program` when omitted, undefined when unrecognized. */
 function readMode(value: unknown): ParseMode | undefined {
   if (value === undefined || value === null) return 'program';
@@ -120,18 +100,18 @@ export async function handleValidationTool(
   try {
     switch (name) {
       case 'validate_hyperscript': {
-        const code = args.code;
-        if (typeof code !== 'string') return missing('code');
+        const code = readCode(args);
+        if (typeof code !== 'string') return code;
         const mode = readMode(args.mode);
-        if (!mode) return invalidMode();
+        if (!mode) return invalid('mode', `one of ${PARSE_MODES.join(', ')}`);
         return await validateHyperscript(code, mode);
       }
 
       case 'parse_hyperscript': {
-        const code = args.code;
-        if (typeof code !== 'string') return missing('code');
+        const code = readCode(args);
+        if (typeof code !== 'string') return code;
         const mode = readMode(args.mode);
-        if (!mode) return invalidMode();
+        if (!mode) return invalid('mode', `one of ${PARSE_MODES.join(', ')}`);
         return await parseHyperscript(code, mode, args.includeTokens === true);
       }
 
@@ -211,12 +191,17 @@ async function parseHyperscript(code: string, mode: ParseMode, includeTokens: bo
   const hint = await snippetHint(code, mode, errors);
   if (hint) result.hint = hint;
   if (includeTokens) {
-    result.tokens = (await tokenize(code)).map(t => ({
-      type: t.type,
-      value: t.value,
-      line: t.line,
-      column: t.column,
-    }));
+    try {
+      result.tokens = (await tokenize(code)).map(t => ({
+        type: t.type,
+        value: t.value,
+        line: t.line,
+        column: t.column,
+      }));
+    } catch {
+      // The tokenizer's own error is already in `errors`; keep the rest of the result.
+      result.tokens = null;
+    }
   }
   return json(result);
 }

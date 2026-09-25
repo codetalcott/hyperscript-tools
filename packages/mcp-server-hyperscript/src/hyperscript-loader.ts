@@ -196,19 +196,63 @@ export async function safeParse(
   const hs = await getHyperscript();
   try {
     const node = parseWith(hs, code, mode);
-    return { node, errors: collectErrors(node) };
+    // An error at the end-of-input token (a truncated script) has no position
+    // of its own: place it just past the last thing written.
+    const errors = collectErrors(node).map(e =>
+      e.line === null && e.token === '<<<EOF>>>' ? { ...e, ...endOfSource(code) } : e
+    );
+    return { node, errors };
   } catch (err) {
-    return {
-      node: null,
-      errors: [
-        {
-          message: err instanceof Error ? err.message.split('\n')[0] : String(err),
-          line: null,
-          column: null,
-        },
-      ],
-    };
+    const message = err instanceof Error ? err.message.split('\n')[0] : String(err);
+    return { node: null, errors: [{ message, ...thrownPosition(hs, code, message) }] };
   }
+}
+
+type Position = { line: number | null; column: number | null };
+
+/** 1-based line and 0-based column of a string index, as the tokenizer counts them. */
+function positionOf(code: string, index: number): Position {
+  const before = code.slice(0, index);
+  return { line: before.split('\n').length, column: index - (before.lastIndexOf('\n') + 1) };
+}
+
+/** Just past the last non-whitespace character. */
+function endOfSource(code: string): Position {
+  return positionOf(code, code.trimEnd().length);
+}
+
+/**
+ * Where a thrown tokenizer error happened. The tokenizer puts the position in
+ * some messages (`… at [Line: 1, Column: 4]`) and reports only the character
+ * for an unknown token.
+ */
+function thrownPosition(hs: HyperscriptApi, code: string, message: string): Position {
+  const failsSameWay = (source: string): boolean => {
+    try {
+      hs.internals.tokenizer.tokenize(source);
+      return false;
+    } catch (err) {
+      return err instanceof Error && err.message === message;
+    }
+  };
+  // Only the top-level tokenizer's positions are the caller's: template strings
+  // re-tokenize their contents, with positions relative to the template.
+  if (!failsSameWay(code)) return { line: null, column: null };
+  const at = /\[Line: (\d+), Column: (\d+)\]/.exec(message);
+  if (at) return { line: Number(at[1]), column: Number(at[2]) };
+  if (message.startsWith('Unknown token: ')) {
+    // The tokenizer stops at the first character it cannot read, so the
+    // shortest prefix that fails the same way ends with that character.
+    let lo = 1;
+    let hi = code.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (failsSameWay(code.slice(0, mid))) hi = mid;
+      else lo = mid + 1;
+    }
+    return positionOf(code, lo - 1);
+  }
+  return { line: null, column: null };
 }
 
 /**

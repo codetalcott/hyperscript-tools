@@ -11,14 +11,18 @@
 
 import type { HyperscriptNode } from './hyperscript-loader.js';
 
-/** Keys that carry noise (tokens, source text, back-refs, runtime state). */
+/**
+ * Keys that carry noise (tokens, source text, back-refs, runtime state). Keys
+ * starting with `_` are the library's internals and are skipped too. Not `root`:
+ * on property access and method calls it holds the receiver (`#code` in
+ * `#code.textContent`), and a back-reference is already dropped as a repeat.
+ */
 const SKIP_KEYS = new Set([
   'errors',
   'programSource',
   'startToken',
   'endToken',
   'parent',
-  'root',
   'sourceFor',
   'symbolTable',
   'context',
@@ -113,18 +117,35 @@ export function astView(node: HyperscriptNode | undefined): {
     const out: Record<string, unknown> = {};
     if (type) out.type = type;
     for (const key of Object.keys(obj)) {
-      if (key === 'type' || SKIP_KEYS.has(key) || key.endsWith('Token')) continue;
-      // `args` on a command/expression node is an internal binding map that
-      // duplicates the node's named fields with back-references; keep it only
-      // when it is the real parameter list (an array), as on def/on features.
-      if (key === 'args' && !Array.isArray(obj[key])) continue;
+      if (key === 'type' || key === 'args' || SKIP_KEYS.has(key) || key.startsWith('_') || key.endsWith('Token')) continue;
       const pruned = prune(obj[key], depth + 1);
       // Drop keys that resolve to nothing, or to a bare back-reference to a node
       // already shown elsewhere in the tree (e.g. `targetExpr`, `rootExpr`).
       if (pruned === undefined || pruned === '[circular]') continue;
       out[key] = pruned;
     }
+    // `args` is the real parameter list on def/on features (an array). On other
+    // nodes it is a binding map that mostly repeats the named fields above, but
+    // some values live only there (a `set` value, template string parts, the
+    // condition of `unless`), so keep whatever it adds.
+    const args = Array.isArray(obj.args) ? prune(obj.args, depth + 1) : pruneArgs(obj, depth);
+    if (args !== undefined) out.args = args;
     return out;
+  };
+
+  /** The entries of a node's `args` binding map that are not already shown. */
+  const pruneArgs = (obj: Record<string, unknown>, depth: number): Record<string, unknown> | undefined => {
+    const args = obj.args;
+    if (!args || typeof args !== 'object') return undefined;
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(args)) {
+      if (value === null || value === undefined || obj[key] === value) continue;
+      let pruned = prune(value, depth + 1);
+      if (Array.isArray(pruned)) pruned = pruned.filter(v => v !== '[circular]');
+      if (pruned === undefined || pruned === '[circular]' || (Array.isArray(pruned) && pruned.length === 0)) continue;
+      out[key] = pruned;
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
   };
 
   const view = prune(node, 0);

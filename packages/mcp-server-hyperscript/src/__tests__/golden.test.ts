@@ -115,3 +115,21 @@ describe('parser-truth regressions (old regex validator got these wrong)', () =>
     expect(typeof errors[0].column).toBe('number');
   });
 });
+
+// Lines are 1-based and columns 0-based, as the tokenizer counts them.
+describe('error positions', () => {
+  it('places an end-of-input error just past the last token', async () => {
+    const { errors } = await validate('on click\n  set x to\n\n');
+    expect(errors[0]).toMatchObject({ line: 2, column: 10 });
+  });
+
+  it('locates an unterminated string', async () => {
+    const { errors } = await validate('on click log "oops');
+    expect(errors[0]).toMatchObject({ message: expect.stringContaining('Unterminated string'), line: 1, column: 13 });
+  });
+
+  it('locates an unknown character, not an earlier copy inside a string', async () => {
+    const { errors } = await validate('on click\n  log "§" then log §');
+    expect(errors[0]).toMatchObject({ message: expect.stringContaining('Unknown token'), line: 2, column: 19 });
+  });
+});
