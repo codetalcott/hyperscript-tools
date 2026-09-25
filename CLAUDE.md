@@ -38,6 +38,17 @@ npx vitest run -t "validates correct hyperscript"
 
 Node 22+ required (CI runs on Node 22 and 24). There is no lint step.
 
+## Releasing
+
+Pushing a version tag publishes. Bump the version in a PR (`npm version <x.y.z> -w @hyperscript-tools/mcp-server --no-git-tag-version` updates `package.json` and the lockfile), merge it, then tag that commit on `main`:
+
+```bash
+git tag -a vX.Y.Z --cleanup=whitespace -F notes.md   # the message opens the release notes
+git push origin vX.Y.Z
+```
+
+[.github/workflows/publish.yml](.github/workflows/publish.yml) checks that the tag matches the package version, runs the checks, publishes to npm (trusted publishing: no token), and creates the GitHub release: the tag message, then GitHub's generated list of merged PRs. `--cleanup=whitespace` keeps Markdown `#` headings, which git otherwise strips from tag messages.
+
 ## Architecture
 
 Everything hangs off one seam and one invariant.

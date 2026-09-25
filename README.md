@@ -27,6 +27,8 @@ npm run typecheck
 
 Node 22+.
 
+Releases: merge the version bump, then push a `vX.Y.Z` tag on that commit. The [publish workflow](.github/workflows/publish.yml) checks the tag against the package version, publishes to npm, and creates the GitHub release.
+
 ## License
 
 MIT.
