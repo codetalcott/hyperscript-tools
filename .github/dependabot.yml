@@ -10,12 +10,16 @@ updates:
     open-pull-requests-limit: 5
     groups:
       # Fold routine minor/patch bumps into one PR; majors still come solo so
-      # they get individual review (e.g. an @modelcontextprotocol/sdk major that
-      # finally moves @hono/node-server to a patched 2.x).
+      # they get individual review.
       minor-and-patch:
         update-types:
           - minor
           - patch
+    ignore:
+      # @types/node follows the oldest supported Node line (engines: >=22),
+      # not the newest; bump it together with engines.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions used by the workflows, so runtime deprecations (like the
   # Node 20 one) surface as PRs instead of being chased by hand.

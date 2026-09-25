@@ -23,7 +23,7 @@ Inside `packages/mcp-server-hyperscript/`:
 
 ```bash
 npm run dev        # run the server from source via tsx (stdio transport)
-npm run build      # bundle with tsup (ESM + .d.ts) to dist/
+npm run build      # bundle with tsup (ESM) to dist/
 npm test           # vitest in watch mode
 npm run test:run   # vitest single run
 npm run typecheck  # tsc --noEmit
@@ -36,7 +36,7 @@ npx vitest run src/__tests__/golden.test.ts
 npx vitest run -t "validates correct hyperscript"
 ```
 
-Node 20+ required (CI runs on Node 24). There is no lint step.
+Node 22+ required (CI runs on Node 22 and 24). There is no lint step.
 
 ## Architecture
 

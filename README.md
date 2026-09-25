@@ -25,7 +25,7 @@ npm run test    # run all package test suites
 npm run typecheck
 ```
 
-Node 20+.
+Node 22+.
 
 ## License
 
