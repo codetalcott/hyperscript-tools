@@ -46,11 +46,11 @@ Add to `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global):
 
 | Tool                   | Description                                                              |
 | ---------------------- | ------------------------------------------------------------------------ |
-| `validate_hyperscript` | Validate with the real parser; returns `{ valid, errors }` with the actual message, line, and column |
+| `validate_hyperscript` | Validate with the real parser; returns `{ valid, errors }` with the actual message, line (1-based), and column (0-based) |
 | `parse_hyperscript`    | Parse to a compact AST view + command sequence (and optional token stream) |
 | `suggest_command`      | Heuristic: suggest the best command(s) for a described task              |
 
-By default both parsing tools read code the way the runtime reads an element script: the value of an `_="…"` attribute or the body of an inline `<script type="text/hyperscript">`, which must consist of features (`on`, `init`, `def`, `behavior`, `set`, `js`, …). Pass `mode: "snippet"` to check a standalone command or expression instead, as accepted by `_hyperscript("…")`.
+By default both parsing tools read code the way the runtime reads an element script: the value of an `_="…"` attribute or the body of an inline `<script type="text/hyperscript">`, which must consist of features (`on`, `init`, `def`, `behavior`, `set`, `js`, …). Pass `mode: "snippet"` to check a standalone command or expression instead, as accepted by `_hyperscript("…")`. Code over 100,000 characters is rejected rather than parsed.
 
 ### Editor assist
 
@@ -58,7 +58,7 @@ By default both parsing tools read code the way the runtime reads an element scr
 | ---------------------- | ---------------------------------------------------------------- |
 | `get_completions`      | Context-aware keyword completions (heuristic)                    |
 | `get_hover_info`       | Hover documentation for a keyword (heuristic)                    |
-| `get_document_symbols` | Event handlers, behaviors, functions, and init/worker blocks, extracted from the parsed AST |
+| `get_document_symbols` | Event handlers, functions, behaviors, init blocks, and set/when/bind/live/install/js features, extracted from the parsed AST |
 
 ### Documentation
 

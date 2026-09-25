@@ -15,6 +15,7 @@ import {
   SPECIAL_SYMBOLS,
 } from './language-data.js';
 import { hyperscriptVersion } from '../hyperscript-loader.js';
+import { json, missing, type ToolResult } from './results.js';
 
 // =============================================================================
 // Tool Definitions
@@ -70,12 +71,6 @@ export const languageDocsTools: Tool[] = [
 // Handler
 // =============================================================================
 
-type ToolResult = { content: Array<{ type: string; text: string }>; isError?: boolean };
-
-const json = (data: unknown): ToolResult => ({
-  content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
-});
-
 /** Normalize a user-supplied command name (`beep` -> `beep!`, trims/lowercases). */
 function normalizeCommand(input: string): string {
   const c = input.trim().toLowerCase();
@@ -92,7 +87,7 @@ export async function handleLanguageDocsTool(
       case 'get_command_docs': {
         const raw = args.command;
         if (typeof raw !== 'string' || !raw) {
-          return { ...json({ error: 'Missing required parameter: command' }), isError: true };
+          return missing('command');
         }
         const command = normalizeCommand(raw);
         const doc = COMMAND_DOCS[command];
@@ -111,7 +106,7 @@ export async function handleLanguageDocsTool(
       case 'get_expression_docs': {
         const raw = args.expression;
         if (typeof raw !== 'string' || !raw) {
-          return { ...json({ error: 'Missing required parameter: expression' }), isError: true };
+          return missing('expression');
         }
         const expression = raw.trim().toLowerCase();
         const doc = EXPRESSION_DOCS[expression];
@@ -122,10 +117,11 @@ export async function handleLanguageDocsTool(
       case 'search_language_elements': {
         const raw = args.query;
         if (typeof raw !== 'string' || !raw) {
-          return { ...json({ error: 'Missing required parameter: query' }), isError: true };
+          return missing('query');
         }
         const query = raw.trim().toLowerCase();
-        const limit = typeof args.limit === 'number' ? args.limit : 10;
+        // `slice(0, -1)` would count from the end: use a whole, non-negative count.
+        const limit = typeof args.limit === 'number' && Number.isFinite(args.limit) ? Math.max(0, Math.floor(args.limit)) : 10;
         const results: Array<{ type: string; name: string; description: string; match: string }> = [];
 
         for (const doc of Object.values(COMMAND_DOCS)) {

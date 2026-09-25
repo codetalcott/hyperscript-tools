@@ -49,6 +49,9 @@ export function listResources(): Resource[] {
 // Resource Reading
 // =============================================================================
 
+/** The MCP spec's error code for an unknown resource URI (not in the SDK's ErrorCode enum). */
+export const RESOURCE_NOT_FOUND = -32002;
+
 export function readResource(uri: string): {
   contents: Array<{ uri: string; mimeType: string; text: string }>;
 } {
@@ -62,6 +65,9 @@ export function readResource(uri: string): {
     case 'hyperscript://examples/common':
       return { contents: [{ uri, mimeType: 'text/markdown', text: getCommonPatterns() }] };
     default:
-      throw new Error(`Unknown resource: ${uri}`);
+      // The SDK sends a thrown error's `code`, `message` and `data` as they are.
+      // (McpError would work too, but it prefixes its code to the message, so
+      // the client would show that prefix twice.)
+      throw Object.assign(new Error(`Resource not found: ${uri}`), { code: RESOURCE_NOT_FOUND, data: { uri } });
   }
 }

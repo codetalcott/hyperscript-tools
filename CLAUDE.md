@@ -68,6 +68,8 @@ Each tool module in [src/tools/](packages/mcp-server-hyperscript/src/tools/) exp
 - `lsp-bridge.ts` — `get_document_symbols` (walks the real AST) + completions/hover (heuristic)
 - `language-docs.ts` — docs/search/language-info, sourced from `language-data.ts`
 
+Shared helpers live in `results.ts`. Report bad input as an `isError` result (`readCode`, `readPosition`, `missing`, `invalid`), never by throwing: the SDK turns a thrown error into an opaque JSON-RPC internal error. `readCode` also enforces `MAX_CODE_LENGTH`, because parse time grows faster than the input and parsing blocks the server.
+
 [src/index.ts](packages/mcp-server-hyperscript/src/index.ts) builds a `HANDLERS` map (tool name → owning handler) by iterating each module's definitions array, and serves over stdio. **To add a tool:** add it to a module's definitions array and handler switch — the routing in `index.ts` picks it up automatically. The server version is read from `package.json` at runtime (do not hardcode it).
 
 ### The drift-test invariant (most important thing to know)
